@@ -2,11 +2,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import psycopg
-from anthropic import Anthropic
-from openai import OpenAI
+from openai import APIConnectionError, InternalServerError, OpenAI, RateLimitError
 
 from leaselens.config import Settings
-from leaselens.embed import embed_texts
+from leaselens.embed import QUERY_PREFIX, embed_texts
 from leaselens.store import StoredChunk, search
 
 DISCLAIMER = (
@@ -47,7 +46,22 @@ class Answer:
     text: str
     sources: list[StoredChunk]
     refused: bool
+    # True when the LLM was unavailable (e.g. free-tier rate limit) and the text is
+    # the matched statute excerpts instead of a generated summary.
+    fallback: bool = False
     disclaimer: str = DISCLAIMER
+
+
+def source_excerpts(sources: list[StoredChunk]) -> str:
+    """No-LLM answer: quote the matched sections verbatim with their citations."""
+    lines = [
+        f"Civ. Code §{s.section} ({s.heading}), as of {s.as_of.isoformat()}:\n{s.text} [Civ. Code §{s.section}]"
+        for s in sources
+    ]
+    return (
+        "The AI summary is unavailable right now, so here is the matching statute text:\n\n"
+        + "\n\n".join(lines)
+    )
 
 
 def build_user_prompt(question: str, sources: list[StoredChunk]) -> str:
@@ -73,30 +87,39 @@ def answer_question(
     if not relevant:
         return Answer(text=REFUSAL, sources=[], refused=True)
 
-    text = generate(SYSTEM_PROMPT, build_user_prompt(question, relevant)).strip()
+    try:
+        text = generate(SYSTEM_PROMPT, build_user_prompt(question, relevant)).strip()
+    except (RateLimitError, APIConnectionError, InternalServerError):
+        # Free-tier quota exhausted or provider down: still answer, from the sources only.
+        # Auth and bad-request errors are not caught, so a misconfigured key stays visible.
+        return Answer(
+            text=source_excerpts(relevant), sources=relevant, refused=False, fallback=True
+        )
+
     if text == INSUFFICIENT or not text:
         return Answer(text=REFUSAL, sources=[], refused=True)
 
     return Answer(text=text, sources=relevant, refused=False)
 
 
-def make_embedder(openai_client: OpenAI, model: str) -> Embedder:
+def make_embedder(model_name: str) -> Embedder:
+    # Questions get the query prefix; the stored statute chunks were embedded without it.
     def embed(texts: list[str]) -> list[list[float]]:
-        return embed_texts(openai_client, model, texts)
+        return embed_texts(model_name, texts, prefix=QUERY_PREFIX)
 
     return embed
 
 
-def make_generator(
-    anthropic_client: Anthropic, model: str, max_tokens: int = 1024
-) -> Generator:
+def make_generator(client: OpenAI, model: str, max_tokens: int = 1024) -> Generator:
     def generate(system: str, user: str) -> str:
-        response = anthropic_client.messages.create(
+        response = client.chat.completions.create(
             model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
+            max_completion_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
         )
-        return "".join(block.text for block in response.content if block.type == "text")
+        return response.choices[0].message.content or ""
 
     return generate

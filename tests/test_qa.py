@@ -1,5 +1,8 @@
 from datetime import date
 
+import httpx
+from openai import RateLimitError
+
 from leaselens import qa
 from leaselens.config import Settings
 from leaselens.store import StoredChunk
@@ -90,3 +93,27 @@ def test_every_answer_carries_the_disclaimer():
     answer, _ = run([hit("1950.5", 0.2)], "Answer [Civ. Code §1950.5].")
 
     assert "legal information, not legal advice" in answer.disclaimer
+
+
+def test_llm_outage_falls_back_to_quoted_sources():
+    def failing_generate(system, user):
+        response = httpx.Response(429, request=httpx.Request("POST", "https://x"))
+        raise RateLimitError("rate limited", response=response, body=None)
+
+    original = qa.search
+    qa.search = lambda conn, vector, k: [hit("1950.5", 0.2)]
+    try:
+        answer = qa.answer_question(
+            "Can my landlord keep my whole deposit?",
+            conn=None,
+            embed=lambda texts: [[0.0] * 3 for _ in texts],
+            generate=failing_generate,
+            settings=SETTINGS,
+        )
+    finally:
+        qa.search = original
+
+    assert answer.fallback is True
+    assert answer.refused is False
+    assert "[Civ. Code §1950.5]" in answer.text
+    assert "A landlord may keep only part" in answer.text

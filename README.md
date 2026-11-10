@@ -7,7 +7,7 @@ Legal information, not legal advice.
 ## Setup
 
 ```bash
-cp .env.example .env          # then add your OPENAI_API_KEY and ANTHROPIC_API_KEY
+cp .env.example .env          # then add your GROQ_API_KEY (free at console.groq.com)
 docker compose up -d db       # Postgres with pgvector
 uv sync
 ```

@@ -6,10 +6,11 @@ import pytest
 
 from leaselens.store import ChunkRecord, connect, init_schema, replace_chunks, search
 
+# The fixture drops the chunks table, so tests must never point at the real corpus DB.
 DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql://leaselens:leaselens@localhost:5433/leaselens"
+    "TEST_DATABASE_URL", "postgresql://leaselens:leaselens@localhost:5433/leaselens_test"
 )
-DIM = 1536
+DIM = 384
 
 
 def unit(index: int) -> list[float]:

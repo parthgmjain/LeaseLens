@@ -17,7 +17,7 @@ A RAG web app for college students in California. A student asks a plain-English
 
 - **No work or lab systems.** Never connect this to UC Merced's Pinnacles HPC cluster, lab data, or any LLT Lab resource. Public data only.
 - **AI output is a draft.** Read every diff before accepting it. Don't accept whole files blind. Run it. Test it.
-- **Check external APIs against real docs.** Don't trust generated calls to OpenAI, pgvector, AWS, or other APIs without checking current documentation.
+- **Check external APIs against real docs.** Don't trust generated calls to Groq, pgvector, AWS, or other APIs without checking current documentation.
 - **Tests are not optional.** Write tests alongside features. If a test or eval fails, fix the code, not the test (unless the test is actually wrong, and say why).
 - **Never commit secrets.** Keys go in `.env` (gitignored) locally and in GitHub Actions secrets / AWS secrets in deployment.
 - **Small commits, clear messages.** One logical change per commit.
@@ -47,8 +47,8 @@ A RAG web app for college students in California. A student asks a plain-English
 ## Stack
 
 - **Backend:** Python + FastAPI
-- **Retrieval:** PostgreSQL + pgvector; OpenAI `text-embedding-3-small` as default (compare against a sentence-transformers model in experiments)
-- **LLM:** Anthropic API, Claude Sonnet 5.5 (`claude-sonnet-5-5`)
+- **Retrieval:** PostgreSQL + pgvector; local sentence-transformers `BAAI/bge-small-en-v1.5` (384-dim, free)
+- **LLM:** Groq free tier, `openai/gpt-oss-120b` via Groq's OpenAI-compatible API; falls back to quoting matched statute text when rate limited
 - **Frontend:** Next.js + TypeScript + Tailwind, chat UI with clickable citations
 - **Deploy:** AWS App Runner for the FastAPI Docker container; Amplify or Vercel for the Next.js web app
 - **CI:** GitHub Actions runs tests and evals on every push
@@ -59,8 +59,8 @@ A RAG web app for college students in California. A student asks a plain-English
 - **Backend:** FastAPI (Python 3.12). Not Next.js + tRPC + Drizzle + SST.
 - **Python tooling:** uv (lockfile), pytest, ruff.
 - **Database:** Docker Postgres with pgvector for local dev; Amazon RDS with pgvector in production.
-- **Embeddings:** OpenAI `text-embedding-3-small` by default.
-- **LLM:** Claude Sonnet 5.5 via the Anthropic API.
+- **Embeddings:** local sentence-transformers `BAAI/bge-small-en-v1.5` by default, so the project costs nothing to run. Changed from OpenAI `text-embedding-3-small` to keep the free goal.
+- **LLM:** Groq free tier (`openai/gpt-oss-120b`), chosen over Gemini's free tier because Google's unpaid tier may use prompts to improve its products. Changed from Claude Sonnet 5.5 to avoid paid API usage. Groq's data policy is only partly verified (see Groq Data Processing Addendum).
 - **Chunking (default):** section-aware, one chunk per statute section. Fixed token windows are the experiment.
 - **Retrieval (default):** pure vector search. Hybrid keyword + vector is the experiment.
 

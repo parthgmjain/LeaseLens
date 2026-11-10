@@ -2,7 +2,6 @@ import argparse
 from datetime import date
 from pathlib import Path
 
-from anthropic import Anthropic
 from openai import OpenAI
 
 from leaselens.chunking import chunk_section
@@ -22,10 +21,7 @@ def ingest(zip_path: Path, as_of: date) -> int:
     sections = load_civ_sections(zip_path, FIRST_SECTION, LAST_SECTION, as_of)
     chunks = [chunk for section in sections for chunk in chunk_section(section)]
 
-    openai_client = OpenAI(api_key=settings.openai_api_key)
-    vectors = embed_texts(
-        openai_client, settings.embedding_model, [c.text for c in chunks]
-    )
+    vectors = embed_texts(settings.embedding_model, [c.text for c in chunks])
 
     records = [
         ChunkRecord(
@@ -50,15 +46,14 @@ def ingest(zip_path: Path, as_of: date) -> int:
 
 def ask(question: str) -> None:
     settings = get_settings()
-    openai_client = OpenAI(api_key=settings.openai_api_key)
-    anthropic_client = Anthropic(api_key=settings.anthropic_api_key)
+    groq_client = OpenAI(api_key=settings.groq_api_key, base_url=settings.groq_base_url)
 
     with connect(settings.database_url) as conn:
         answer = answer_question(
             question,
             conn=conn,
-            embed=make_embedder(openai_client, settings.embedding_model),
-            generate=make_generator(anthropic_client, settings.llm_model),
+            embed=make_embedder(settings.embedding_model),
+            generate=make_generator(groq_client, settings.llm_model),
             settings=settings,
         )
 

@@ -7,11 +7,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql://leaselens:leaselens@localhost:5433/leaselens"
-    openai_api_key: str = ""
-    anthropic_api_key: str = ""
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dim: int = 1536
-    llm_model: str = "claude-sonnet-5-5"
+    # Local sentence-transformers model: free, no API key. bge-small beat MiniLM on
+    # deposit-question retrieval in a quick check (see EXPERIMENTS.md once it exists).
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dim: int = 384
+    # Groq's OpenAI-compatible API; free tier, rate limited.
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "openai/gpt-oss-120b"
     top_k: int = 5
     # Cosine distance above which the best match is treated as unrelated.
     # Calibrated against the eval set in Phase 2.
