@@ -147,3 +147,20 @@ Earlier notes flagged every citation as labelled "Hiring of Real Property". That
 - `repairs-heat-broken`: the heating rule is not in the retrieved chunks.
 
 These are chunk-level retrieval gaps, not excerpt display problems.
+
+## Experiment 6: neighbouring chunks, local-question note, and three new checked questions
+
+**Changes:**
+- Excerpts include each matched chunk plus the chunk before and after it in the same section, so a rule at a chunk edge is not lost. Each section is quoted once.
+- Questions that name a city, county, or local rule get a note that this tool covers state law only. CLAUDE.md requires state-law answers with this note.
+- Three new eval questions, each checked against the stored statute text: §1954 entry notice ("twenty-four hours"), §1942 repair and deduct ("repair the same himself"), §1942.5 retaliation ("retaliates").
+- The Berkeley question's expectation changed from refusal to a state-law answer with the note. This is a deliberate change to match CLAUDE.md, not a relaxed check.
+
+**Result (excerpt-only, 11 cases):** retrieval recall@5 89%, refusal accuracy 100%, required facts in the quoted text 70%, forbidden phrases 0.
+
+**Remaining misses:**
+- `deposit-whole-retained`: "21 calendar days" is not in the quoted text.
+- `repairs-heat-broken`: the heating rule is not in the quoted text.
+- `retaliation`: §1942.5 is not retrieved for the question, which retrieves §1942 instead.
+
+**Note:** Quoting neighbouring chunks makes excerpts longer, up to five sections of up to 4,000 characters each. The browser view has not been checked for this length.

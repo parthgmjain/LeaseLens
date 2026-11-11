@@ -114,9 +114,7 @@ export default function Home() {
           role="note"
           className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
         >
-          <strong>Legal information, not legal advice.</strong> Your city may add more tenant
-          protections than state law. For help with your situation, contact a legal aid office or
-          your campus student legal services. Do not include your name, address, or lease details.
+          <strong>This is not legal advice.</strong> The text shown is from California Civil Code, taken from the official leginfo.legislature.ca.gov download on November 10, 2026. Make any legal decision with a lawyer, not with this tool. Your city may add more tenant protections than state law. For help, contact a legal aid office or your campus student legal services. Do not include your name, address, or lease details.
         </div>
 
         <form onSubmit={ask} className="flex flex-col gap-3">

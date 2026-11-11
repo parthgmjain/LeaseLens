@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -6,12 +7,13 @@ from openai import APIConnectionError, InternalServerError, OpenAI, RateLimitErr
 
 from leaselens.config import Settings
 from leaselens.embed import QUERY_PREFIX, embed_texts
-from leaselens.store import StoredChunk, search
+from leaselens.store import StoredChunk, neighboring_chunks, search
 
 DISCLAIMER = (
-    "This is legal information, not legal advice. Your city may add more tenant "
-    "protections than state law. For help with your situation, contact a legal aid "
-    "office or your campus student legal services."
+    "This text is from California Civil Code, taken from the official leginfo.legislature.ca.gov "
+    "download on November 10, 2026. This is not legal advice. Make any legal decision with a "
+    "lawyer, not with this tool. Your city may add more tenant protections than state law. "
+    "For help, contact a legal aid office or your campus student legal services."
 )
 
 REFUSAL = (
@@ -61,6 +63,15 @@ class Answer:
 
 FALLBACK_INTRO = "The AI summary is unavailable right now, so here is the matching statute text:\n\n"
 EXCERPT_INTRO = "Matching statute text. Read the sections below; they are quoted from the official code.\n\n"
+# Questions that name a city, county, or local rule get a note: this tool covers state law only.
+LOCAL_QUESTION = re.compile(
+    r"\b(berkeley|oakland|los angeles|san francisco|san jose|city|county|ordinance|local|rent control)\b",
+    re.IGNORECASE,
+)
+LOCAL_NOTE = (
+    "Note: this tool covers California state law only. A city or county may have its own "
+    "tenant rules, so check there too.\n\n"
+)
 EXCERPT_SECTIONS = 5  # excerpt-only mode costs no tokens, so it can quote more sections
 EXCERPT_MODE_CHARS = 4000  # and longer excerpts, so rules like "10 percent" are not cut off
 FALLBACK_SOURCES = 2  # quote at most this many sections when the LLM is unavailable
@@ -101,6 +112,27 @@ def source_excerpts(
     return intro + "\n\n".join(lines)
 
 
+def section_excerpts(
+    chunks: list[StoredChunk],
+    intro: str,
+    max_sections: int,
+    max_chars: int,
+) -> str:
+    """Quote each section once, from all of its chunks in statute order, trimmed and cited."""
+    by_section: dict[str, list[StoredChunk]] = {}
+    for c in chunks:
+        by_section.setdefault(c.section, []).append(c)
+    lines = []
+    for section, parts in list(by_section.items())[:max_sections]:
+        head = parts[0]
+        body = " ".join(c.text for c in parts)
+        lines.append(
+            f"Civ. Code §{section} ({head.heading}), as of {head.as_of.isoformat()}:\n"
+            f"{_excerpt(body, max_chars)} [Civ. Code §{section}]"
+        )
+    return intro + "\n\n".join(lines)
+
+
 def build_user_prompt(question: str, sources: list[StoredChunk]) -> str:
     blocks = [
         f"[Source {i}] Civ. Code §{s.section} ({s.heading}), as of {s.as_of.isoformat()}\n{s.text}"
@@ -131,9 +163,11 @@ def answer_question(
 
     # Excerpt-only mode: no model call, so no cost and no rate limit. Quotes the statute text.
     if not settings.answer_with_llm:
+        note = LOCAL_NOTE if LOCAL_QUESTION.search(question) else ""
         return Answer(
-            text=source_excerpts(
-                relevant,
+            text=note
+            + section_excerpts(
+                neighboring_chunks(conn, relevant),
                 intro=EXCERPT_INTRO,
                 max_sections=EXCERPT_SECTIONS,
                 max_chars=EXCERPT_MODE_CHARS,

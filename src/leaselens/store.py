@@ -14,6 +14,7 @@ class StoredChunk:
     source_url: str
     as_of: date
     distance: float
+    chunk_index: int = 0
 
 
 @dataclass(frozen=True)
@@ -108,7 +109,7 @@ def search(
     if query_text is None:
         rows = conn.execute(
             """
-            SELECT section, heading, text, source_url, as_of, embedding <=> %s AS distance
+            SELECT section, heading, text, source_url, as_of, embedding <=> %s AS distance, chunk_index
             FROM chunks
             ORDER BY embedding <=> %s
             LIMIT %s
@@ -138,7 +139,7 @@ def search(
                 FROM vec FULL OUTER JOIN kw ON vec.id = kw.id
             )
             SELECT c.section, c.heading, c.text, c.source_url, c.as_of,
-                   c.embedding <=> %(q)s AS distance
+                   c.embedding <=> %(q)s AS distance, c.chunk_index
             FROM fused
             JOIN chunks c ON c.id = fused.id
             ORDER BY fused.score DESC
@@ -160,6 +161,45 @@ def search(
             source_url=source_url,
             as_of=as_of,
             distance=float(distance),
+            chunk_index=chunk_index,
         )
-        for section, heading, text, source_url, as_of, distance in rows
+        for section, heading, text, source_url, as_of, distance, chunk_index in rows
     ]
+
+
+def neighboring_chunks(conn: psycopg.Connection, hits: list[StoredChunk]) -> list[StoredChunk]:
+    """Each hit plus the chunk before and after it in the same section.
+
+    A rule can sit at the edge of a chunk, so the neighbour may hold the sentence the
+    question needs. Results keep the sections in the order they were first hit, and
+    chunks in statute order within each section.
+    """
+    section_rank: dict[str, int] = {}
+    for h in hits:
+        section_rank.setdefault(h.section, len(section_rank))
+
+    found: dict[tuple[str, int], StoredChunk] = {}
+    for h in hits:
+        for index in (h.chunk_index - 1, h.chunk_index, h.chunk_index + 1):
+            if index < 0 or (h.section, index) in found:
+                continue
+            row = conn.execute(
+                "SELECT section, heading, text, source_url, as_of FROM chunks "
+                "WHERE section = %s AND chunk_index = %s",
+                (h.section, index),
+            ).fetchone()
+            if row:
+                section, heading, text, source_url, as_of = row
+                found[(h.section, index)] = StoredChunk(
+                    section=section,
+                    heading=heading,
+                    text=text,
+                    source_url=source_url,
+                    as_of=as_of,
+                    distance=h.distance,
+                    chunk_index=index,
+                )
+    return sorted(
+        found.values(),
+        key=lambda c: (section_rank[c.section], c.chunk_index),
+    )

@@ -119,7 +119,8 @@ def test_prompt_routes_residential_deposits_to_1950_5():
 def test_every_answer_carries_the_disclaimer():
     answer, _ = run([hit("1950.5", 0.2)], "Answer [Civ. Code §1950.5].")
 
-    assert "legal information, not legal advice" in answer.disclaimer
+    assert "This is not legal advice" in answer.disclaimer
+    assert "November 10, 2026" in answer.disclaimer
 
 
 def test_llm_outage_falls_back_to_quoted_sources():
@@ -155,7 +156,8 @@ def test_fallback_quotes_each_section_once():
     assert "[Civ. Code §1950.5]" in text
 
 
-def test_excerpt_only_mode_quotes_statute_text_without_calling_the_model():
+def test_excerpt_only_mode_quotes_statute_text_without_calling_the_model(monkeypatch):
+    monkeypatch.setattr(qa, "neighboring_chunks", lambda conn, hits: hits)
     excerpt_settings = Settings(top_k=5, max_distance=0.5, answer_with_llm=False)
     model_calls = []
 
@@ -184,7 +186,8 @@ def test_excerpt_only_mode_quotes_statute_text_without_calling_the_model():
     assert "[Civ. Code §1950.5]" in answer.text
 
 
-def test_excerpt_only_mode_still_refuses_when_nothing_is_close():
+def test_excerpt_only_mode_still_refuses_when_nothing_is_close(monkeypatch):
+    monkeypatch.setattr(qa, "neighboring_chunks", lambda conn, hits: hits)
     excerpt_settings = Settings(top_k=5, max_distance=0.5, answer_with_llm=False)
 
     original = qa.search
