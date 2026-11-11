@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     groq_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
     top_k: int = 5
+    # Hybrid = vector search fused with Postgres full-text search. Set false for vector-only.
+    hybrid_search: bool = True
     # Cosine distance above which the best match is treated as unrelated.
     # Calibrated against the eval set in Phase 2.
     max_distance: float = 0.55

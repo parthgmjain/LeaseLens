@@ -50,6 +50,14 @@ def init_schema(conn: psycopg.Connection, embedding_dim: int) -> None:
         )
         """
     )
+    # Full-text column for hybrid search. Added with IF NOT EXISTS so existing tables pick it up.
+    conn.execute(
+        """
+        ALTER TABLE chunks ADD COLUMN IF NOT EXISTS fts tsvector
+            GENERATED ALWAYS AS (to_tsvector('english', text)) STORED
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS chunks_fts_idx ON chunks USING GIN (fts)")
     conn.commit()
 
 
@@ -78,19 +86,72 @@ def replace_chunks(conn: psycopg.Connection, records: list[ChunkRecord]) -> None
             )
 
 
+# Reciprocal rank fusion constant: a standard choice that keeps one list from dominating.
+RRF_K = 60
+# How many candidates each side contributes before fusion.
+CANDIDATES = 20
+
+
 def search(
-    conn: psycopg.Connection, query_embedding: list[float], k: int
+    conn: psycopg.Connection,
+    query_embedding: list[float],
+    k: int,
+    query_text: str | None = None,
 ) -> list[StoredChunk]:
+    """Vector search, or hybrid (vector + Postgres full-text) when query_text is given.
+
+    Hybrid uses reciprocal rank fusion, so a chunk that matches the query words exactly
+    can rank high even when its embedding is not the closest. Distance is always the
+    vector distance, so the refusal threshold means the same thing in both modes.
+    """
     query = Vector(query_embedding)
-    rows = conn.execute(
-        """
-        SELECT section, heading, text, source_url, as_of, embedding <=> %s AS distance
-        FROM chunks
-        ORDER BY embedding <=> %s
-        LIMIT %s
-        """,
-        (query, query, k),
-    ).fetchall()
+    if query_text is None:
+        rows = conn.execute(
+            """
+            SELECT section, heading, text, source_url, as_of, embedding <=> %s AS distance
+            FROM chunks
+            ORDER BY embedding <=> %s
+            LIMIT %s
+            """,
+            (query, query, k),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            WITH vec AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> %(q)s) AS rank
+                FROM chunks
+                ORDER BY embedding <=> %(q)s
+                LIMIT %(pool)s
+            ),
+            kw AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank(fts, query) DESC) AS rank
+                FROM chunks, websearch_to_tsquery('english', %(text)s) AS query
+                WHERE fts @@ query
+                ORDER BY ts_rank(fts, query) DESC
+                LIMIT %(pool)s
+            ),
+            fused AS (
+                SELECT COALESCE(vec.id, kw.id) AS id,
+                       COALESCE(1.0 / (%(rrf)s + vec.rank), 0)
+                     + COALESCE(1.0 / (%(rrf)s + kw.rank), 0) AS score
+                FROM vec FULL OUTER JOIN kw ON vec.id = kw.id
+            )
+            SELECT c.section, c.heading, c.text, c.source_url, c.as_of,
+                   c.embedding <=> %(q)s AS distance
+            FROM fused
+            JOIN chunks c ON c.id = fused.id
+            ORDER BY fused.score DESC
+            LIMIT %(k)s
+            """,
+            {
+                "q": query,
+                "text": query_text,
+                "pool": CANDIDATES,
+                "rrf": RRF_K,
+                "k": k,
+            },
+        ).fetchall()
     return [
         StoredChunk(
             section=section,

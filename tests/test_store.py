@@ -72,3 +72,42 @@ def test_failed_replace_keeps_old_data(conn):
 
     hits = search(conn, unit(0), k=10)
     assert [h.section for h in hits] == ["1950.5"]
+
+
+def test_hybrid_search_surfaces_exact_keyword_match_outside_vector_top_k(conn):
+    # Vector search alone ranks the 1950.5 chunk first. The keyword match "heating" lives in
+    # a chunk whose embedding is far away, so only hybrid search can bring it into the results.
+    heating = ChunkRecord(
+        section="1941.1",
+        heading="Habitability",
+        chunk_index=0,
+        text="Heating facilities that conformed with applicable law, maintained in good working order.",
+        source_url="https://example.test",
+        as_of=date(2025, 1, 1),
+        embedding=unit(5),
+    )
+    replace_chunks(conn, [record("1950.5", 0, 0), record("1950.5", 1, 1), heating])
+
+    vector_only = search(conn, unit(0), k=2)
+    hybrid = search(conn, unit(0), k=2, query_text="heating facilities")
+
+    assert "1941.1" not in [h.section for h in vector_only]
+    assert "1941.1" in [h.section for h in hybrid]
+
+
+def test_hybrid_search_keeps_vector_distance_for_the_threshold(conn):
+    heating = ChunkRecord(
+        section="1941.1",
+        heading="Habitability",
+        chunk_index=0,
+        text="Heating facilities in good working order.",
+        source_url="https://example.test",
+        as_of=date(2025, 1, 1),
+        embedding=unit(5),
+    )
+    replace_chunks(conn, [record("1950.5", 0, 0), heating])
+
+    hits = search(conn, unit(0), k=2, query_text="heating facilities")
+    by_section = {h.section: h for h in hits}
+
+    assert by_section["1941.1"].distance == pytest.approx(1.0)

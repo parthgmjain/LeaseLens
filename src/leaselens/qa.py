@@ -30,6 +30,11 @@ Rules:
 - Every factual claim must cite its source inline, like [Civ. Code §1950.5].
 - Use plain English a first-year student can follow.
 - If the sources do not answer the question, reply with exactly: {INSUFFICIENT}
+- Residential rentals (a home the tenant lives in) are governed by Civil Code §1950.5. Section 1950.7 covers non-residential deposits; do not apply its deadlines or rules to a residential deposit question.
+- State a deadline, dollar amount, or penalty only if it appears in the sources, and quote its section. If the sources say a penalty exists but not its amount, say that instead of guessing.
+- Do not call a landlord's conduct illegal or presumed illegal. Say what the section requires, and what remedies the section gives a tenant.
+- If a relevant section gives the tenant a remedy (such as damages for bad faith), include it, with its amount when the sources state one.
+- Cite only as [Civ. Code §X]. Do not use source markers or special tokens.
 - Do not give personal legal advice. Describe what the law says."""
 
 
@@ -80,7 +85,12 @@ def answer_question(
     settings: Settings,
 ) -> Answer:
     query_vector = embed([question])[0]
-    hits = search(conn, query_vector, settings.top_k)
+    hits = search(
+        conn,
+        query_vector,
+        settings.top_k,
+        query_text=question if settings.hybrid_search else None,
+    )
     relevant = [h for h in hits if h.distance <= settings.max_distance]
 
     # Refuse without calling the LLM when nothing retrieved is close enough.

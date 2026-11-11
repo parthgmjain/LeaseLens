@@ -24,7 +24,7 @@ def hit(section: str, distance: float) -> StoredChunk:
 def run(hits, generate_reply):
     calls = []
 
-    def fake_search(conn, vector, k):
+    def fake_search(conn, vector, k, query_text=None):
         return hits
 
     def fake_generate(system, user):
@@ -89,6 +89,12 @@ def test_irrelevant_hits_are_excluded_from_sources():
     assert [s.section for s in answer.sources] == ["1950.5"]
 
 
+def test_prompt_routes_residential_deposits_to_1950_5():
+    # Regression: the model once applied §1950.7 (non-residential deposits) to a residential question.
+    assert "§1950.5" in qa.SYSTEM_PROMPT
+    assert "do not apply its deadlines" in qa.SYSTEM_PROMPT
+
+
 def test_every_answer_carries_the_disclaimer():
     answer, _ = run([hit("1950.5", 0.2)], "Answer [Civ. Code §1950.5].")
 
@@ -101,7 +107,7 @@ def test_llm_outage_falls_back_to_quoted_sources():
         raise RateLimitError("rate limited", response=response, body=None)
 
     original = qa.search
-    qa.search = lambda conn, vector, k: [hit("1950.5", 0.2)]
+    qa.search = lambda conn, vector, k, query_text=None: [hit("1950.5", 0.2)]
     try:
         answer = qa.answer_question(
             "Can my landlord keep my whole deposit?",
