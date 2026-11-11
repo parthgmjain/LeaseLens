@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
+/* CondorCode palette: warm courtroom tones with California condor accents. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ground: #f4ecdc; /* cream paper */
+  --surface: #ebe0c8; /* a step darker, for panels */
+  --ink: #2a1a12; /* walnut ink, for text */
+  --muted: #5a4638;
+  --oxblood: #6b1e24; /* primary action */
+  --oxblood-ink: #f8f1e3;
+  --brass: #b8862b; /* focus and small accents */
+  --condor: #1a1411; /* the silhouette */
+  --condor-head: #c4531c; /* the bare head */
+  --walnut: #2a1a12;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-oxblood: var(--oxblood);
+  --color-oxblood-ink: var(--oxblood-ink);
+  --color-brass: var(--brass);
+  --color-muted: var(--muted);
+  --color-walnut: var(--walnut);
+  --color-condor: var(--condor);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-serif: var(--font-source-serif);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+:focus-visible {
+  outline: 3px solid var(--brass);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--brass);
+  color: var(--ink);
 }
