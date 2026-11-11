@@ -204,3 +204,28 @@ def test_excerpt_only_mode_still_refuses_when_nothing_is_close(monkeypatch):
         qa.search = original
 
     assert answer.refused is True
+
+
+def _excerpt(section: str, text: str) -> qa.SectionExcerpt:
+    return qa.SectionExcerpt(
+        section=section, heading="h", as_of=date(2026, 1, 1), source_url="u", text=text
+    )
+
+
+def test_rank_sections_puts_topic_matches_first():
+    excerpts = [
+        _excerpt("1940.8.5", "The pesticide notice must be posted. Notice is required."),
+        _excerpt("1954", "The landlord may enter the unit on written notice. Entry is limited."),
+    ]
+
+    ranked = qa.rank_sections("Can my landlord come into my apartment without telling me?", excerpts)
+
+    assert [e.section for e in ranked] == ["1954", "1940.8.5"]
+
+
+def test_rank_sections_keeps_retrieval_order_when_no_topic_words_match():
+    excerpts = [_excerpt("1941", "text one"), _excerpt("1950.5", "text two")]
+
+    ranked = qa.rank_sections("Something unrelated entirely", excerpts)
+
+    assert [e.section for e in ranked] == ["1941", "1950.5"]

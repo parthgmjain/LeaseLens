@@ -43,6 +43,14 @@ class SourceOut(BaseModel):
     text: str
 
 
+class ExcerptOut(BaseModel):
+    section: str
+    heading: str
+    source_url: str
+    as_of: date
+    text: str
+
+
 class AskResponse(BaseModel):
     answer: str
     refused: bool
@@ -51,6 +59,8 @@ class AskResponse(BaseModel):
     # True when the answer is matched statute text only (no AI summary).
     excerpt_only: bool
     sources: list[SourceOut]
+    # Excerpt-only mode: the matched sections, best match first.
+    excerpts: list[ExcerptOut] = []
     disclaimer: str
 
 
@@ -197,6 +207,16 @@ def ask(request: AskRequest, http_request: Request) -> AskResponse:
         refused=answer.refused,
         fallback=answer.fallback,
         excerpt_only=answer.excerpt_only,
+        excerpts=[
+            ExcerptOut(
+                section=e.section,
+                heading=e.heading,
+                source_url=e.source_url,
+                as_of=e.as_of,
+                text=e.text,
+            )
+            for e in answer.excerpts
+        ],
         sources=_unique_sources(answer),
         disclaimer=answer.disclaimer,
     )

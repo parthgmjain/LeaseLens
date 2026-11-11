@@ -1,5 +1,6 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 from typing import Protocol
 
 import psycopg
@@ -49,10 +50,21 @@ class Generator(Protocol):
 
 
 @dataclass(frozen=True)
+class SectionExcerpt:
+    section: str
+    heading: str
+    as_of: date
+    source_url: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Answer:
     text: str
     sources: list[StoredChunk]
     refused: bool
+    # Excerpt-only mode: one entry per quoted section, best match first.
+    excerpts: list[SectionExcerpt] = field(default_factory=list)
     # True when the LLM was unavailable (e.g. free-tier rate limit) and the text is
     # the matched statute excerpts instead of a generated summary.
     fallback: bool = False
@@ -112,6 +124,70 @@ def source_excerpts(
     return intro + "\n\n".join(lines)
 
 
+# Lay words in a question mapped to the words the statutes use. Small and hand-written on purpose:
+# it lets "come into my apartment" rank §1954 (entry) above unrelated sections.
+TOPIC_TERMS = {
+    "enter": ["enter", "entry"],
+    "come": ["enter", "entry"],
+    "into": ["enter", "entry"],
+    "telling": ["notice"],
+    "notice": ["notice"],
+    "deposit": ["deposit", "security"],
+    "security": ["deposit", "security"],
+    "heat": ["heating"],
+    "heater": ["heating"],
+    "heating": ["heating"],
+    "repair": ["repair"],
+    "repairs": ["repair"],
+    "retaliate": ["retaliat"],
+    "retaliation": ["retaliat"],
+    "complained": ["retaliat"],
+    "increase": ["increase"],
+    "raise": ["increase"],
+    "evict": ["terminat", "evict"],
+    "evicted": ["terminat", "evict"],
+    "pest": ["pest"],
+    "bugs": ["bed bug", "pest"],
+}
+
+
+def rank_sections(question: str, excerpts: list[SectionExcerpt]) -> list[SectionExcerpt]:
+    """Put sections that use the question's topic words first. Ties keep the retrieval order."""
+    words = set(re.findall(r"[a-z]+", question.lower()))
+    wanted = {term for word in words for term in TOPIC_TERMS.get(word, [])}
+    if not wanted:
+        return excerpts
+
+    def score(excerpt: SectionExcerpt) -> int:
+        # Count mentions, not just presence, so a section that talks about the topic a lot ranks higher.
+        text = excerpt.text.lower()
+        return sum(text.count(term) for term in wanted)
+
+    return sorted(excerpts, key=lambda e: -score(e))  # sorted() is stable
+
+
+def section_excerpts_list(
+    chunks: list[StoredChunk], max_sections: int, max_chars: int
+) -> list[SectionExcerpt]:
+    """One trimmed excerpt per section, from all of its chunks in statute order."""
+    by_section: dict[str, list[StoredChunk]] = {}
+    for c in chunks:
+        by_section.setdefault(c.section, []).append(c)
+    out = []
+    for section, parts in list(by_section.items())[:max_sections]:
+        head = parts[0]
+        out.append(
+            SectionExcerpt(
+                section=section,
+                heading=head.heading,
+                as_of=head.as_of,
+                source_url=head.source_url,
+                text=_excerpt(" ".join(c.text for c in parts), max_chars),
+            )
+        )
+    return out
+
+
 def section_excerpts(
     chunks: list[StoredChunk],
     intro: str,
@@ -164,17 +240,25 @@ def answer_question(
     # Excerpt-only mode: no model call, so no cost and no rate limit. Quotes the statute text.
     if not settings.answer_with_llm:
         note = LOCAL_NOTE if LOCAL_QUESTION.search(question) else ""
-        return Answer(
-            text=note
-            + section_excerpts(
+        excerpts = rank_sections(
+            question,
+            section_excerpts_list(
                 neighboring_chunks(conn, relevant),
-                intro=EXCERPT_INTRO,
                 max_sections=EXCERPT_SECTIONS,
                 max_chars=EXCERPT_MODE_CHARS,
             ),
+        )
+        body = "\n\n".join(
+            f"Civ. Code §{e.section} ({e.heading}), as of {e.as_of.isoformat()}:\n"
+            f"{e.text} [Civ. Code §{e.section}]"
+            for e in excerpts
+        )
+        return Answer(
+            text=note + EXCERPT_INTRO + body,
             sources=relevant,
             refused=False,
             excerpt_only=True,
+            excerpts=excerpts,
         )
 
     try:

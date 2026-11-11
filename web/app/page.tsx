@@ -18,7 +18,16 @@ type AskResponse = {
   fallback: boolean;
   excerpt_only: boolean;
   sources: Source[];
+  excerpts: Excerpt[];
   disclaimer: string;
+};
+
+type Excerpt = {
+  section: string;
+  heading: string;
+  source_url: string;
+  as_of: string;
+  text: string;
 };
 
 // Matches citations the model writes like [Civ. Code §1950.5] or [Civ. Code §1950.5 (h)(1)].
@@ -52,6 +61,25 @@ function renderAnswer(text: string, sources: Source[]) {
       })}
     </p>
   ));
+}
+
+function ExcerptCard({ excerpt, open }: { excerpt: Excerpt; open: boolean }) {
+  return (
+    <details open={open} className="rounded-lg bg-white p-5 shadow-sm">
+      <summary className="cursor-pointer">
+        <a
+          href={excerpt.source_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-sky-800 underline underline-offset-2"
+        >
+          Civil Code §{excerpt.section}
+        </a>
+        <span className="text-zinc-500"> · {excerpt.heading} · as of {excerpt.as_of}</span>
+      </summary>
+      <p className="mt-3 whitespace-pre-line leading-7 text-zinc-800">{excerpt.text}</p>
+    </details>
+  );
 }
 
 export default function Home() {
@@ -167,11 +195,32 @@ export default function Home() {
                 No source here answers this question, so the app will not guess.
               </p>
             )}
-            <div className="rounded-lg bg-white p-5 shadow-sm">
-              {renderAnswer(result.answer, result.sources)}
-            </div>
+            {result.excerpt_only ? (
+              <div className="flex flex-col gap-3">
+                {result.excerpts.slice(0, 2).map((e) => (
+                  <ExcerptCard key={e.section} excerpt={e} open />
+                ))}
+                {result.excerpts.length > 2 && (
+                  <details className="rounded-lg bg-white p-4 shadow-sm">
+                    <summary className="cursor-pointer font-medium text-zinc-700">
+                      Show {result.excerpts.length - 2} more section
+                      {result.excerpts.length - 2 === 1 ? "" : "s"}
+                    </summary>
+                    <div className="mt-3 flex flex-col gap-3">
+                      {result.excerpts.slice(2).map((e) => (
+                        <ExcerptCard key={e.section} excerpt={e} open={false} />
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg bg-white p-5 shadow-sm">
+                {renderAnswer(result.answer, result.sources)}
+              </div>
+            )}
 
-            {result.sources.length > 0 && (
+            {!result.excerpt_only && result.sources.length > 0 && (
               <div>
                 <h2 className="mb-2 font-semibold">Sources</h2>
                 <ul className="flex flex-col gap-3">
