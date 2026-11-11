@@ -73,6 +73,11 @@ export default function Home() {
         body: JSON.stringify({ question: trimmed }),
       });
       if (!res.ok) {
+        // 429 carries a readable reason from the server (per-visitor or daily limit).
+        const body = await res.json().catch(() => null);
+        if (res.status === 429 && body?.detail) {
+          throw new Error(body.detail);
+        }
         throw new Error(
           res.status === 503
             ? "The statute database is unavailable right now. Try again later."
@@ -176,7 +181,10 @@ export default function Home() {
                         Civil Code §{s.section}
                       </a>
                       <span className="text-zinc-500"> · as of {s.as_of}</span>
-                      <p className="mt-2 whitespace-pre-line text-zinc-700">{s.text}</p>
+                      <details className="mt-2 text-zinc-700">
+                        <summary className="cursor-pointer text-zinc-600">Show statute text</summary>
+                        <p className="mt-2 whitespace-pre-line">{s.text}</p>
+                      </details>
                     </li>
                   ))}
                 </ul>
