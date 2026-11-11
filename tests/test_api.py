@@ -141,3 +141,49 @@ def test_daily_counter_resets_on_a_new_day():
     assert limiter.check("a", now, per_ip=10, window_seconds=600, daily_cap=1) is None
     assert limiter.check("b", now, per_ip=10, window_seconds=600, daily_cap=1) is not None
     assert limiter.check("b", now + 86_400, per_ip=10, window_seconds=600, daily_cap=1) is None
+
+
+class _NullConnection:
+    def __enter__(self):
+        return object()
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _wire_pipeline(monkeypatch, answers: list[Answer]) -> list[str]:
+    """Replace the real pipeline with a counter so caching can be tested without a database or LLM."""
+    calls: list[str] = []
+
+    def fake_answer(question, conn, embed, generate, settings):
+        calls.append(question)
+        return answers[len(calls) - 1]
+
+    monkeypatch.setattr(api, "answer_question", fake_answer)
+    monkeypatch.setattr(api, "connect", lambda url: _NullConnection())
+    monkeypatch.setattr(api, "make_embedder", lambda model: None)
+    monkeypatch.setattr(api, "make_generator", lambda client, model: None)
+    api._answer_cache.clear()
+    return calls
+
+
+def test_repeated_question_is_served_from_cache(monkeypatch):
+    calls = _wire_pipeline(monkeypatch, [Answer(text="A", sources=[], refused=True)])
+
+    first = api.ask_service("My landlord kept my deposit?")
+    second = api.ask_service("  my landlord KEPT my deposit?  ")
+
+    assert calls == ["My landlord kept my deposit?"]
+    assert first is second
+
+
+def test_fallback_answers_are_not_cached(monkeypatch):
+    fallback = Answer(text="quoted", sources=[], refused=False, fallback=True)
+    real = Answer(text="summary", sources=[], refused=False)
+    calls = _wire_pipeline(monkeypatch, [fallback, real])
+
+    api.ask_service("deposit question")
+    later = api.ask_service("deposit question")
+
+    assert len(calls) == 2
+    assert later.text == "summary"

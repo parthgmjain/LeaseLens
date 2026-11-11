@@ -109,3 +109,18 @@ All eight questions are now marked verified.
 ## Note: citation headings are not a parsing bug
 
 Earlier notes flagged every citation as labelled "Hiring of Real Property". That is the official article title for the section's position in the code (TOC path `8.4.78.3`). The bulk download has no section-level titles such as "Security deposits", so the label is accurate to the source but not descriptive. Any friendlier label would be a hand-curated list, not something parsed from the data.
+
+## Experiment 4: fewer chunks, shorter output, and answer caching (token budget)
+
+**Why:** Groq's free tier has a daily token cap of 200,000. An eight-question eval used about 30,000 tokens, and the cap was reached during evals.
+
+**Changes:**
+- `top_k` 5 → 3. Cuts each request's prompt by roughly 40%.
+- Output limit `max_completion_tokens` 1,024 → 512. Reserves less budget per request.
+- In-memory answer cache in the API, keyed on the normalized question. Repeat questions cost no tokens. Fallback answers are not cached.
+
+**Status: not yet measured.** Before this can be recorded as a result, the eval set must run with no skips and compare recall, refusals, and fact coverage against the baseline. Two things to check:
+- Whether 512 output tokens is enough for gpt-oss-120b, which may spend part of its budget on reasoning. If answers come back empty or truncated, raise the limit.
+- Whether three chunks still contain the expected section for each question.
+
+**First live check (single question, deposit):** With 3 chunks and a 512-token limit, the answer was cut off mid-sentence after about 500 characters, and §1950.5 was not retrieved (only §1950.7 and §1954.06). The model then said the residential rule was not in its sources. Both changes made this answer worse. Do not commit the 3-chunk or 512-token settings as they are. Options: keep the cache, restore `top_k` 5, and raise the output limit (or check `finish_reason` and retry when truncated).

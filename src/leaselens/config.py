@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
+    # Five chunks: 3 cut §1950.5 from retrieval for the deposit question (see EXPERIMENTS.md).
     top_k: int = 5
     # Hybrid = vector search fused with Postgres full-text search. Set false for vector-only.
     hybrid_search: bool = True

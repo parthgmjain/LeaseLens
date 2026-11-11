@@ -6,7 +6,7 @@ pipeline, and shapes the JSON response.
 
 import threading
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from datetime import UTC, date, datetime
 from functools import lru_cache
 
@@ -65,19 +65,45 @@ def _groq_client() -> OpenAI:
     )
 
 
+CACHE_MAX_ENTRIES = 500
+_answer_cache: OrderedDict[str, Answer] = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _cache_key(question: str) -> str:
+    return " ".join(question.lower().split())
+
+
 def ask_service(question: str) -> Answer:
-    """Run the full pipeline for one question. Tests replace this function."""
+    """Run the full pipeline for one question, reusing a cached answer when there is one.
+
+    Only real model answers and refusals are cached. Fallback answers (the LLM was
+    unavailable) are not, so a later request can still get a summary.
+    """
+    key = _cache_key(question)
+    with _cache_lock:
+        if key in _answer_cache:
+            _answer_cache.move_to_end(key)
+            return _answer_cache[key]
+
     settings = get_settings()
     embed = make_embedder(settings.embedding_model)
     generate = make_generator(_groq_client(), settings.llm_model)
     with connect(settings.database_url) as conn:
-        return answer_question(
+        answer = answer_question(
             question,
             conn=conn,
             embed=embed,
             generate=generate,
             settings=settings,
         )
+
+    if not answer.fallback:
+        with _cache_lock:
+            _answer_cache[key] = answer
+            if len(_answer_cache) > CACHE_MAX_ENTRIES:
+                _answer_cache.popitem(last=False)
+    return answer
 
 
 def _unique_sources(answer: Answer) -> list[SourceOut]:
