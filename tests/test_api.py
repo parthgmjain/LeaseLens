@@ -1,9 +1,11 @@
 from datetime import date
 
 import psycopg
+import pytest
 from fastapi.testclient import TestClient
 
 from leaselens import api
+from leaselens.config import Settings
 from leaselens.qa import DISCLAIMER, Answer
 from leaselens.store import StoredChunk
 
@@ -97,3 +99,45 @@ def test_database_outage_returns_503(monkeypatch):
     response = client.post("/ask", json={"question": "deposit question"})
 
     assert response.status_code == 503
+
+
+@pytest.fixture(autouse=True)
+def fresh_limiter(monkeypatch):
+    # Each test starts with empty counters, so one test's requests don't affect another.
+    monkeypatch.setattr(api, "limiter", api.QuestionLimiter())
+
+
+def test_per_ip_limit_returns_429_after_the_window_quota(monkeypatch):
+    stub(monkeypatch, Answer(text="x", sources=[], refused=True))
+    monkeypatch.setattr(api, "get_settings", lambda: Settings(ask_limit_per_ip=2))
+
+    codes = [client.post("/ask", json={"question": "deposit question"}).status_code for _ in range(3)]
+
+    assert codes == [200, 200, 429]
+
+
+def test_daily_cap_blocks_further_questions():
+    limiter = api.QuestionLimiter()
+    now = 1_800_000_000.0  # a fixed moment in UTC
+
+    assert limiter.check("a", now, per_ip=10, window_seconds=600, daily_cap=2) is None
+    assert limiter.check("b", now, per_ip=10, window_seconds=600, daily_cap=2) is None
+    assert "daily" in limiter.check("c", now, per_ip=10, window_seconds=600, daily_cap=2)
+
+
+def test_ip_limit_recovers_after_the_window():
+    limiter = api.QuestionLimiter()
+    now = 1_800_000_000.0
+
+    assert limiter.check("a", now, per_ip=1, window_seconds=600, daily_cap=100) is None
+    assert limiter.check("a", now + 1, per_ip=1, window_seconds=600, daily_cap=100) is not None
+    assert limiter.check("a", now + 601, per_ip=1, window_seconds=600, daily_cap=100) is None
+
+
+def test_daily_counter_resets_on_a_new_day():
+    limiter = api.QuestionLimiter()
+    now = 1_800_000_000.0
+
+    assert limiter.check("a", now, per_ip=10, window_seconds=600, daily_cap=1) is None
+    assert limiter.check("b", now, per_ip=10, window_seconds=600, daily_cap=1) is not None
+    assert limiter.check("b", now + 86_400, per_ip=10, window_seconds=600, daily_cap=1) is None

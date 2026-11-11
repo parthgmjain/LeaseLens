@@ -89,6 +89,27 @@ def test_irrelevant_hits_are_excluded_from_sources():
     assert [s.section for s in answer.sources] == ["1950.5"]
 
 
+def test_fallback_quotes_at_most_two_trimmed_sections():
+    long = "Sentence number one is here. " * 80
+    sources = [hit("1950.5", 0.2), hit("1941", 0.3), hit("1946.2", 0.4)]
+    sources = [
+        StoredChunk(**{**s.__dict__, "text": long}) for s in sources
+    ]
+
+    text = qa.source_excerpts(sources)
+
+    assert text.count("[Civ. Code §") == qa.FALLBACK_SOURCES
+    assert "[Civ. Code §1946.2]" not in text
+    assert len(text) < 2 * (qa.EXCERPT_CHARS + 200)
+
+
+def test_excerpt_cuts_at_a_sentence_end_when_possible():
+    text = "word " * 10 + "The sentence ends here. " + "word " * 100
+    excerpt = qa._excerpt(text, limit=100)
+
+    assert excerpt == ("word " * 10 + "The sentence ends here.").strip()
+
+
 def test_prompt_routes_residential_deposits_to_1950_5():
     # Regression: the model once applied §1950.7 (non-residential deposits) to a residential question.
     assert "§1950.5" in qa.SYSTEM_PROMPT
@@ -123,3 +144,12 @@ def test_llm_outage_falls_back_to_quoted_sources():
     assert answer.refused is False
     assert "[Civ. Code §1950.5]" in answer.text
     assert "A landlord may keep only part" in answer.text
+
+
+def test_fallback_quotes_each_section_once():
+    sources = [hit("1950.7", 0.2), hit("1950.7", 0.21), hit("1950.5", 0.3)]
+
+    text = qa.source_excerpts(sources)
+
+    assert text.count("[Civ. Code §1950.7]") == 1
+    assert "[Civ. Code §1950.5]" in text

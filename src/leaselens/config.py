@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     top_k: int = 5
     # Hybrid = vector search fused with Postgres full-text search. Set false for vector-only.
     hybrid_search: bool = True
+    # Public API limits. They protect the shared free-tier LLM quota from one visitor or a bot.
+    ask_limit_per_ip: int = 10
+    ask_limit_window_seconds: int = 600
+    daily_question_cap: int = 300
     # Cosine distance above which the best match is treated as unrelated.
     # Calibrated against the eval set in Phase 2.
     max_distance: float = 0.55

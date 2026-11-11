@@ -4,11 +4,14 @@ The answer logic lives in leaselens.qa. This module only validates input, runs t
 pipeline, and shapes the JSON response.
 """
 
-from datetime import date
+import threading
+import time
+from collections import defaultdict, deque
+from datetime import UTC, date, datetime
 from functools import lru_cache
 
 import psycopg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field
@@ -97,8 +100,61 @@ def _unique_sources(answer: Answer) -> list[SourceOut]:
     return out
 
 
+class QuestionLimiter:
+    """In-memory limits: a sliding window per client IP, and a cap per UTC day.
+
+    In-memory means the counts reset when the server restarts and do not share across
+    several server processes. That is fine for one small instance; move to a shared store
+    before scaling out.
+    """
+
+    def __init__(self) -> None:
+        self._recent: dict[str, deque[float]] = defaultdict(deque)
+        self._day: date | None = None
+        self._day_count = 0
+        self._lock = threading.Lock()
+
+    def check(
+        self,
+        client: str,
+        now: float,
+        per_ip: int,
+        window_seconds: int,
+        daily_cap: int,
+    ) -> str | None:
+        """Return a reason string if the question is refused, otherwise record it and return None."""
+        with self._lock:
+            today = datetime.fromtimestamp(now, tz=UTC).date()
+            if today != self._day:
+                self._day, self._day_count = today, 0
+            if self._day_count >= daily_cap:
+                return "The daily question limit has been reached. Please try again tomorrow."
+            hits = self._recent[client]
+            while hits and now - hits[0] > window_seconds:
+                hits.popleft()
+            if len(hits) >= per_ip:
+                return "You have asked many questions recently. Please wait a few minutes and try again."
+            hits.append(now)
+            self._day_count += 1
+            return None
+
+
+limiter = QuestionLimiter()
+
+
 @app.post("/ask", response_model=AskResponse)
-def ask(request: AskRequest) -> AskResponse:
+def ask(request: AskRequest, http_request: Request) -> AskResponse:
+    settings = get_settings()
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    reason = limiter.check(
+        client_ip,
+        time.time(),
+        per_ip=settings.ask_limit_per_ip,
+        window_seconds=settings.ask_limit_window_seconds,
+        daily_cap=settings.daily_question_cap,
+    )
+    if reason:
+        raise HTTPException(status_code=429, detail=reason)
     try:
         answer = ask_service(request.question.strip())
     except psycopg.OperationalError as exc:

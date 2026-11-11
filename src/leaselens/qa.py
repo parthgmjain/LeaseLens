@@ -57,11 +57,35 @@ class Answer:
     disclaimer: str = DISCLAIMER
 
 
+FALLBACK_SOURCES = 2  # quote at most this many sections when the LLM is unavailable
+EXCERPT_CHARS = 700  # keep each quoted excerpt short; the full text is one click away
+
+
+def _excerpt(text: str, limit: int = EXCERPT_CHARS) -> str:
+    """Cut at a sentence end before the limit, or at a word boundary with an ellipsis."""
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    sentence_end = max(cut.rfind(". "), cut.rfind("; "))
+    if sentence_end > limit // 2:
+        return cut[: sentence_end + 1]
+    return cut.rsplit(" ", 1)[0] + " …"
+
+
 def source_excerpts(sources: list[StoredChunk]) -> str:
-    """No-LLM answer: quote the matched sections verbatim with their citations."""
+    """No-LLM answer: quote the top matched sections, trimmed, with citations."""
+    # One excerpt per section: two chunks of the same section would repeat the same citation.
+    seen: set[str] = set()
+    unique: list[StoredChunk] = []
+    for s in sources:
+        if s.section not in seen:
+            seen.add(s.section)
+            unique.append(s)
     lines = [
-        f"Civ. Code §{s.section} ({s.heading}), as of {s.as_of.isoformat()}:\n{s.text} [Civ. Code §{s.section}]"
-        for s in sources
+        f"Civ. Code §{s.section} ({s.heading}), as of {s.as_of.isoformat()}:\n"
+        f"{_excerpt(s.text)} [Civ. Code §{s.section}]"
+        for s in unique[:FALLBACK_SOURCES]
     ]
     return (
         "The AI summary is unavailable right now, so here is the matching statute text:\n\n"
