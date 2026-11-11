@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
+    # False (default, free): answer with the matched statute text only, no model call.
+    # True: summarize with the LLM when the key is set.
+    answer_with_llm: bool = False
     # Five chunks: 3 cut §1950.5 from retrieval for the deposit question (see EXPERIMENTS.md).
     top_k: int = 5
     # Hybrid = vector search fused with Postgres full-text search. Set false for vector-only.
@@ -25,7 +28,7 @@ class Settings(BaseSettings):
     daily_question_cap: int = 300
     # Cosine distance above which the best match is treated as unrelated.
     # Calibrated against the eval set in Phase 2.
-    max_distance: float = 0.55
+    max_distance: float = 0.39
 
 
 @lru_cache

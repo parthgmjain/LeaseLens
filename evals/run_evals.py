@@ -75,7 +75,8 @@ def main() -> None:
                     )
                 )
                 print(f"done {case.id}", flush=True)
-            time.sleep(PAUSE_SECONDS)
+            if settings.answer_with_llm:  # only model calls need pacing for the free-tier quota
+                time.sleep(PAUSE_SECONDS)
 
     report = score(results)
     print()

@@ -16,6 +16,7 @@ type AskResponse = {
   answer: string;
   refused: boolean;
   fallback: boolean;
+  excerpt_only: boolean;
   sources: Source[];
   disclaimer: string;
 };
@@ -151,6 +152,12 @@ export default function Home() {
 
         {result && (
           <section aria-live="polite" className="flex flex-col gap-4">
+            {result.excerpt_only && (
+              <p className="rounded-lg bg-sky-50 p-3 text-sm text-sky-900">
+                This tool shows the matching statute text without an AI summary. Read the sections
+                below for the exact rules.
+              </p>
+            )}
             {result.fallback && (
               <p className="rounded-lg bg-zinc-100 p-3 text-sm text-zinc-700">
                 The AI summary is unavailable right now, so the matching statute text is shown

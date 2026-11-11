@@ -124,3 +124,26 @@ Earlier notes flagged every citation as labelled "Hiring of Real Property". That
 - Whether three chunks still contain the expected section for each question.
 
 **First live check (single question, deposit):** With 3 chunks and a 512-token limit, the answer was cut off mid-sentence after about 500 characters, and §1950.5 was not retrieved (only §1950.7 and §1954.06). The model then said the residential rule was not in its sources. Both changes made this answer worse. Do not commit the 3-chunk or 512-token settings as they are. Options: keep the cache, restore `top_k` 5, and raise the output limit (or check `finish_reason` and retry when truncated).
+
+## Experiment 5: excerpt-only mode (no model calls), with a wider quote and a recalibrated threshold
+
+**Why:** The free tier can't sustain model answers. Excerpt-only mode returns the matched statute text with citations and makes no model call, so it costs nothing and has no rate limit.
+
+**Changes:** `answer_with_llm` defaults to false. Excerpt mode quotes up to five sections (was two) and up to 4,000 characters each (was 700 to 1,200). `max_distance` moved from 0.55 to 0.39.
+
+**Threshold basis:** Top-match distances for the eight eval questions: on-topic 0.20 to 0.37, off-topic 0.30 (Berkeley) and 0.41 (taxes). No value separates Berkeley from on-topic questions. 0.39 refuses the taxes question and keeps all on-topic questions. This is calibrated on eight questions and will need rechecking.
+
+**Result (excerpt-only, 8 cases):**
+
+| Metric | Before (2 sections, 700 chars, threshold 0.55) | After |
+|---|---|---|
+| Retrieval recall@5 | 100% | 100% |
+| Refusal accuracy | 75% | 88% |
+| Required facts in quoted text | 33% | 67% |
+
+**Remaining misses:**
+- `out-of-scope-local` (Berkeley): still answered. Its distance is inside the on-topic range, so a distance threshold can't refuse it. Handling it needs a scope rule.
+- `rent-increase-cap`: the "10 percent" cap is not in the retrieved chunks.
+- `repairs-heat-broken`: the heating rule is not in the retrieved chunks.
+
+These are chunk-level retrieval gaps, not excerpt display problems.

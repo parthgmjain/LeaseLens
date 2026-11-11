@@ -54,9 +54,15 @@ class Answer:
     # True when the LLM was unavailable (e.g. free-tier rate limit) and the text is
     # the matched statute excerpts instead of a generated summary.
     fallback: bool = False
+    # True in excerpt-only mode: no AI summary is written, only the matched statute text.
+    excerpt_only: bool = False
     disclaimer: str = DISCLAIMER
 
 
+FALLBACK_INTRO = "The AI summary is unavailable right now, so here is the matching statute text:\n\n"
+EXCERPT_INTRO = "Matching statute text. Read the sections below; they are quoted from the official code.\n\n"
+EXCERPT_SECTIONS = 5  # excerpt-only mode costs no tokens, so it can quote more sections
+EXCERPT_MODE_CHARS = 4000  # and longer excerpts, so rules like "10 percent" are not cut off
 FALLBACK_SOURCES = 2  # quote at most this many sections when the LLM is unavailable
 EXCERPT_CHARS = 700  # keep each quoted excerpt short; the full text is one click away
 
@@ -73,7 +79,12 @@ def _excerpt(text: str, limit: int = EXCERPT_CHARS) -> str:
     return cut.rsplit(" ", 1)[0] + " …"
 
 
-def source_excerpts(sources: list[StoredChunk]) -> str:
+def source_excerpts(
+    sources: list[StoredChunk],
+    intro: str = FALLBACK_INTRO,
+    max_sections: int = FALLBACK_SOURCES,
+    max_chars: int = EXCERPT_CHARS,
+) -> str:
     """No-LLM answer: quote the top matched sections, trimmed, with citations."""
     # One excerpt per section: two chunks of the same section would repeat the same citation.
     seen: set[str] = set()
@@ -84,13 +95,10 @@ def source_excerpts(sources: list[StoredChunk]) -> str:
             unique.append(s)
     lines = [
         f"Civ. Code §{s.section} ({s.heading}), as of {s.as_of.isoformat()}:\n"
-        f"{_excerpt(s.text)} [Civ. Code §{s.section}]"
-        for s in unique[:FALLBACK_SOURCES]
+        f"{_excerpt(s.text, max_chars)} [Civ. Code §{s.section}]"
+        for s in unique[:max_sections]
     ]
-    return (
-        "The AI summary is unavailable right now, so here is the matching statute text:\n\n"
-        + "\n\n".join(lines)
-    )
+    return intro + "\n\n".join(lines)
 
 
 def build_user_prompt(question: str, sources: list[StoredChunk]) -> str:
@@ -120,6 +128,20 @@ def answer_question(
     # Refuse without calling the LLM when nothing retrieved is close enough.
     if not relevant:
         return Answer(text=REFUSAL, sources=[], refused=True)
+
+    # Excerpt-only mode: no model call, so no cost and no rate limit. Quotes the statute text.
+    if not settings.answer_with_llm:
+        return Answer(
+            text=source_excerpts(
+                relevant,
+                intro=EXCERPT_INTRO,
+                max_sections=EXCERPT_SECTIONS,
+                max_chars=EXCERPT_MODE_CHARS,
+            ),
+            sources=relevant,
+            refused=False,
+            excerpt_only=True,
+        )
 
     try:
         text = generate(SYSTEM_PROMPT, build_user_prompt(question, relevant)).strip()

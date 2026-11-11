@@ -7,7 +7,7 @@ from leaselens import qa
 from leaselens.config import Settings
 from leaselens.store import StoredChunk
 
-SETTINGS = Settings(top_k=5, max_distance=0.5)
+SETTINGS = Settings(top_k=5, max_distance=0.5, answer_with_llm=True)
 
 
 def hit(section: str, distance: float) -> StoredChunk:
@@ -153,3 +153,51 @@ def test_fallback_quotes_each_section_once():
 
     assert text.count("[Civ. Code §1950.7]") == 1
     assert "[Civ. Code §1950.5]" in text
+
+
+def test_excerpt_only_mode_quotes_statute_text_without_calling_the_model():
+    excerpt_settings = Settings(top_k=5, max_distance=0.5, answer_with_llm=False)
+    model_calls = []
+
+    def generate(system, user):
+        model_calls.append(user)
+        return "should not be used"
+
+    original = qa.search
+    qa.search = lambda conn, vector, k, query_text=None: [hit("1950.5", 0.2)]
+    try:
+        answer = qa.answer_question(
+            "Can my landlord keep my whole deposit?",
+            conn=None,
+            embed=lambda texts: [[0.0] * 3 for _ in texts],
+            generate=generate,
+            settings=excerpt_settings,
+        )
+    finally:
+        qa.search = original
+
+    assert model_calls == []
+    assert answer.excerpt_only is True
+    assert answer.fallback is False
+    assert answer.refused is False
+    assert "Matching statute text" in answer.text
+    assert "[Civ. Code §1950.5]" in answer.text
+
+
+def test_excerpt_only_mode_still_refuses_when_nothing_is_close():
+    excerpt_settings = Settings(top_k=5, max_distance=0.5, answer_with_llm=False)
+
+    original = qa.search
+    qa.search = lambda conn, vector, k, query_text=None: [hit("1950.5", 0.9)]
+    try:
+        answer = qa.answer_question(
+            "How do I file taxes?",
+            conn=None,
+            embed=lambda texts: [[0.0] * 3 for _ in texts],
+            generate=lambda s, u: "should not be used",
+            settings=excerpt_settings,
+        )
+    finally:
+        qa.search = original
+
+    assert answer.refused is True

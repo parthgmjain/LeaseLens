@@ -48,6 +48,8 @@ class AskResponse(BaseModel):
     refused: bool
     # True when the LLM was unavailable and `answer` is quoted statute text, not a summary.
     fallback: bool
+    # True when the answer is matched statute text only (no AI summary).
+    excerpt_only: bool
     sources: list[SourceOut]
     disclaimer: str
 
@@ -189,6 +191,7 @@ def ask(request: AskRequest, http_request: Request) -> AskResponse:
         answer=answer.text,
         refused=answer.refused,
         fallback=answer.fallback,
+        excerpt_only=answer.excerpt_only,
         sources=_unique_sources(answer),
         disclaimer=answer.disclaimer,
     )
