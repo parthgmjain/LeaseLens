@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     top_k: int = 5
     # Hybrid = vector search fused with Postgres full-text search. Set false for vector-only.
     hybrid_search: bool = True
+    # Comma-separated web origins allowed to call the API. Set to the Vercel URL when deployed.
+    allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     # Public API limits. They protect the shared free-tier LLM quota from one visitor or a bot.
     ask_limit_per_ip: int = 10
     ask_limit_window_seconds: int = 600

@@ -25,7 +25,7 @@ MAX_QUESTION_CHARS = 500
 app = FastAPI(title="LeaseLens", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[o.strip() for o in get_settings().allowed_origins.split(",") if o.strip()],
     allow_methods=["POST"],
     allow_headers=["Content-Type"],
 )
@@ -90,7 +90,12 @@ def ask_service(question: str) -> Answer:
 
     settings = get_settings()
     embed = make_embedder(settings.embedding_model)
-    generate = make_generator(_groq_client(), settings.llm_model)
+    if settings.answer_with_llm:
+        generate = make_generator(_groq_client(), settings.llm_model)
+    else:
+        # Excerpt-only mode never calls the model, so no Groq key is needed.
+        def generate(system: str, user: str) -> str:
+            raise RuntimeError("The model is disabled in excerpt-only mode.")
     with connect(settings.database_url) as conn:
         answer = answer_question(
             question,

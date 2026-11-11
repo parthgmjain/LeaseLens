@@ -187,3 +187,16 @@ def test_fallback_answers_are_not_cached(monkeypatch):
 
     assert len(calls) == 2
     assert later.text == "summary"
+
+
+def test_excerpt_mode_does_not_need_a_groq_key(monkeypatch):
+    # Regression: the API used to build the Groq client on every request, which crashed
+    # when no key was set. Excerpt-only mode must work with no key at all.
+    monkeypatch.setattr(api, "get_settings", lambda: Settings(answer_with_llm=False, groq_api_key=""))
+    monkeypatch.setattr(api, "_groq_client", lambda: (_ for _ in ()).throw(AssertionError("built")))
+    monkeypatch.setattr(api, "connect", lambda url: _NullConnection())
+    monkeypatch.setattr(api, "make_embedder", lambda model: None)
+    monkeypatch.setattr(api, "answer_question", lambda *a, **k: Answer(text="ok", sources=[], refused=True))
+    api._answer_cache.clear()
+
+    assert api.ask_service("deposit question").text == "ok"

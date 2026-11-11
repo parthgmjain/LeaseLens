@@ -1,0 +1,9 @@
+.git
+.venv
+web
+data
+evals
+tests
+graphify-out
+.env
+**/__pycache__
